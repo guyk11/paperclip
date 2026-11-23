@@ -24,6 +24,7 @@ import { isOpenRouterCatalogUnavailable } from "../services/openrouter-models.js
 import { ENVIRONMENT_PROVIDER_UNAVAILABLE_CODE, readTransientSandboxCreationRefusal } from "../services/environment-provider-unavailable-error.js";
 import { isEndedDbPoolError } from "../database-retry.js";
 import { ToolGatewayHttpError } from "../services/tool-gateway.js";
+import { isStorageCredentialRejection, isStorageUnavailableError, recordedStorageFailureDiagnostics, STORAGE_TEMPORARILY_UNAVAILABLE_MESSAGE, STORAGE_UNAVAILABLE_CODE } from "../storage/storage-unavailable.js";
 
 export interface ErrorContext {
   error: {
@@ -349,6 +350,18 @@ export function errorHandler(
     if (!res.headersSent) {
       res.set("Retry-After", "30");
       res.status(503).json({ error: providerRefusal.message, code: ENVIRONMENT_PROVIDER_UNAVAILABLE_CODE });
+    } else {
+      res.end();
+    }
+    return;
+  }
+
+  if (isStorageUnavailableError(rootError) && !isStorageCredentialRejection(rootError)) {
+    logger.warn({ method: req.method, route: req.route?.path, storageFailure: recordedStorageFailureDiagnostics(rootError) },
+      "File storage was unavailable for a request");
+    if (!res.headersSent) {
+      res.set("Retry-After", "30");
+      res.status(503).json({ error: STORAGE_TEMPORARILY_UNAVAILABLE_MESSAGE, code: STORAGE_UNAVAILABLE_CODE });
     } else {
       res.end();
     }
